@@ -54,11 +54,12 @@ class ShopUnitCreateView(generics.CreateAPIView):
         shopUnit.date=date
         if item['parentId'] != 'null':
             shopUnit.parentId=item['parentId']
-        shopUnit.price=item['price']
+        if shopUnit.type == ShopUnitType.OFFER:
+            shopUnit.price = item['price'] or 0
+        else:
+            shopUnit.price = None
         shopUnit.save()
 
-
-        ShopUnit.updatePrice(shopUnit)
 
         # create record in statistics table
         shopUnitStatisticUnit = ShopUnitStatisticUnit(id=shopUnit.id,
@@ -120,7 +121,7 @@ class ShopUnitCreateView(generics.CreateAPIView):
             if type == ShopUnitType.OFFER:
                 shopUnit.price = item['price'] or 0
             else:
-                shopUnit.price = ShopUnit.calculatePrice(shopUnit)
+                shopUnit.price = None
             if parentId != 'null':
                 shopUnit.parentId = parentId
 
@@ -130,11 +131,8 @@ class ShopUnitCreateView(generics.CreateAPIView):
             if parentId != 'null':
                 parent = parent[0]
                 parent.children.add(shopUnit)
-                parent.price = ShopUnit.calculatePrice(parent)
                 parent.save()
 
-
-            ShopUnit.updatePrice(shopUnit)
             
             # create record in statistics table
             shopUnitStatisticUnit = ShopUnitStatisticUnit(id=id,

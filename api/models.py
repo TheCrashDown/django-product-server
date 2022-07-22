@@ -27,34 +27,6 @@ class ShopUnit(models.Model):
     
     def __str__(self):
         return self.name + " " + str(self.id)
-
-    def calculatePrice(shopUnit):
-        # function to calculate category price
-        if shopUnit.type == ShopUnitType.OFFER:
-            return shopUnit.price
-        
-        if shopUnit.children.count() == 0:
-            return 0
-        
-        sum = 0.0
-        for child in shopUnit.children.all():
-            sum += ShopUnit.calculatePrice(child)
-        return sum / shopUnit.children.count()
-
-    def updatePrice(shopUnit):
-        # function to recursively update parent category price when item is updated
-
-        if shopUnit.parentId == 'null':
-            return
-
-        if shopUnit.type == ShopUnitType.CATEGORY:
-            shopUnit.price = ShopUnit.calculatePrice(shopUnit)
-            shopUnit.save()
-        
-        parent = ShopUnit.objects.filter(id=shopUnit.parentId)
-        
-        if parent:
-            ShopUnit.updatePrice(parent[0])
     
     def deleteStatistics(shopUnit):
         # function to delete statistics of deleted shopUnit
@@ -79,8 +51,6 @@ class ShopUnit(models.Model):
         ShopUnit.deleteStatistics(shopUnit)
         shopUnit.delete()
         return
-
-
 
 
 class ShopUnitImport(models.Model):
