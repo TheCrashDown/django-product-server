@@ -1,6 +1,6 @@
 # django-product-server
 
-REST API product server allowing to add and get products and categories 
+REST API product server allowing to add and get information about products and categories 
 
 ## install:
 ```
@@ -45,6 +45,6 @@ Get info about item with given id
 ### `/api/node/<id>/statistic` [GET]
 Get statistics about all changes in item with given id
 ### `/api/sales?date=<date>` [GET]
-Get all items which a changed during last 24 hours from given date
+Get all items which are changed during last 24 hours from given date
 ### `/api/delete/<id>` [DELETE]
 Removes item with given id and all statistics related to it
