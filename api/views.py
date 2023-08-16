@@ -6,189 +6,276 @@ from rest_framework import views, generics, mixins
 from rest_framework.response import Response
 from rest_framework import status
 
-from .models import ShopUnit, ShopUnitType, ShopUnitStatisticUnit, ShopUnitStatisticResponse
-from .serializers import ShopUnitSerializer, ShopUnitImportRequestSerializer, \
-    ShopUnitStatisticResponseSerializer
-
+from .models import (
+    ShopUnit,
+    ShopUnitType,
+    ShopUnitStatisticUnit,
+    ShopUnitStatisticResponse,
+)
+from .serializers import (
+    ShopUnitSerializer,
+    ShopUnitImportRequestSerializer,
+    ShopUnitStatisticResponseSerializer,
+)
 
 
 class ShopUnitGetAllView(views.APIView):
-    # view showing all elements
+    """
+    A view for retrieving all shop units.
+    """
 
     def get(self, request, *args, **kwargs):
-        queryset = ShopUnit.objects.all()
-        serializer = ShopUnitSerializer(queryset, many=True)
+        """
+        Handles GET requests to retrieve all shop units.
+
+        Parameters:
+        - request: The HTTP request object.
+        - args: Additional positional arguments.
+        - kwargs: Additional keyword arguments.
+
+        Returns:
+        - A Response object containing serialized shop unit data.
+        """
+        shop_units = ShopUnit.objects.all()
+        serializer = ShopUnitSerializer(shop_units, many=True)
 
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 class ShopUnitGetItemView(views.APIView):
-    # view showing element by id
+    """
+    View class for retrieving a shop unit by its ID.
+    """
 
     def get(self, request, *args, **kwargs):
-        pk = kwargs.get('pk')
+        """
+        Retrieves a shop unit by its ID and returns the serialized data.
+
+        Args:
+            request: The HTTP request object.
+            args: Additional positional arguments.
+            kwargs: Additional keyword arguments, containing the 'pk' parameter.
+
+        Returns:
+            A Response object with the serialized data of the shop unit if it exists,
+            or a 404 response if the item doesn't exist.
+
+        Raises:
+            ValidationError: If the 'pk' parameter is not a valid UUID.
+        """
+        pk = kwargs.get("pk")
         try:
-            queryset = ShopUnit.objects.filter(id=pk)
-            serializer = ShopUnitSerializer(queryset, many=True)
+            shop_unit = ShopUnit.objects.get(id=pk)
+            serializer = ShopUnitSerializer(shop_unit)
 
-            if queryset:
-                return Response(serializer.data, status=status.HTTP_200_OK)
-            return Response({'message' : 'such item doesnt exist'}, status=status.HTTP_404_NOT_FOUND)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except ShopUnit.DoesNotExist:
+            return Response(
+                {"message": "Such item doesn't exist"}, status=status.HTTP_404_NOT_FOUND
+            )
         except ValidationError:
-            return Response({'message' : '{} is not a valid uuid'.format(pk)}, status=status.HTTP_400_BAD_REQUEST)
-
+            return Response(
+                {"message": "{} is not a valid UUID".format(pk)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
 
 class ShopUnitCreateView(generics.CreateAPIView):
-    # general view to import new items
-    
+    """
+    A view for creating new shop units.
+    """
+
     serializer_class = ShopUnitImportRequestSerializer
 
-    def updateItem(shopUnit, item, date):
-        # function to update item if it exists
+    def updateItem(shop_unit, item, date):
+        """
+        Updates an item in a shop unit if it exists.
 
-        if item['type'] != shopUnit.type:
-            return Response({'message' : 'forbidden to change type'},status=status.HTTP_400_BAD_REQUEST)
-        
-        shopUnit.name=item['name']
-        shopUnit.date=date
-        if item['parentId'] != 'null':
-            shopUnit.parentId=item['parentId']
-        if shopUnit.type == ShopUnitType.OFFER:
-            shopUnit.price = item['price'] or 0
+        Parameters:
+            shopUnit (ShopUnit): The shop unit to update the item in.
+            item (dict): The item to update.
+            date (datetime): The date to set for the shop unit.
+
+        Returns:
+            None: If the update is successful.
+
+        Raises:
+            Response: If the item type is different from the shop unit type.
+        """
+
+        if item["type"] != shop_unit.type:
+            return Response(
+                {"message": "Forbidden to change type"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Update shop unit properties
+        shop_unit.name = item["name"]
+        shop_unit.date = date
+        shop_unit.parent_id = item.get("parentId")
+        if shop_unit.type == ShopUnitType.OFFER:
+            shop_unit.price = item.get("price", 0)
         else:
-            shopUnit.price = None
-        shopUnit.save()
+            shop_unit.price = None
 
+        # Save the changes to shop unit
+        shop_unit.save()
 
-        # create record in statistics table
-        shopUnitStatisticUnit = ShopUnitStatisticUnit(id=shopUnit.id,
-                                                      statid=uuid.uuid4(),
-                                                      name=shopUnit.name, 
-                                                      parentId=shopUnit.parentId,
-                                                      type=shopUnit.type,
-                                                      date=date,
-                                                      price=shopUnit.price)
-        shopUnitStatisticUnit.save()
-
-        return None
+        # Create record in statistics table
+        shop_unit_statistic_unit = ShopUnitStatisticUnit(
+            id=shop_unit.id,
+            stat_id=uuid.uuid4(),
+            name=shop_unit.name,
+            parent_id=shop_unit.parent_id,
+            type=shop_unit.type,
+            date=date,
+            price=shop_unit.price,
+        )
+        shop_unit_statistic_unit.save()
 
     def post(self, request, *args, **kwargs):
-        items = request.data['items']
-        date = request.data['updateDate']
+        """
+        Handles a POST request to create multiple items.
 
-        # handle all items in request
+        Args:
+            request (Request): The request object.
+            *args: Variable length argument list.
+            **kwargs: Arbitrary keyword arguments.
+
+        Returns:
+            Response: The HTTP response indicating the result of the request.
+        """
+        items = request.data["items"]
+        date = request.data["updateDate"]
+
         for item in items:
-            id = item['id'] or uuid.uuid4()
-            
-            # check if such id already exists
-            existing_id = ShopUnit.objects.filter(id=id)
-            if existing_id:
-                shopUnit = existing_id[0]
-                resp = ShopUnitCreateView.updateItem(shopUnit, item, date)
-                if resp != None:
+            item_id = item.get("id") or uuid.uuid4()
+
+            shop_unit = ShopUnit.objects.filter(id=item_id).first()
+            if shop_unit:
+                resp = ShopUnitCreateView.updateItem(shop_unit, item, date)
+                if resp is not None:
                     return resp
                 continue
 
-            # if not exist => we create it now
-            name = item['name']
-            parentId = item['parentId']
-            parent = ""
-            
-            if parentId != 'null':
-                # check if parent is correct
-                parent = ShopUnit.objects.filter(id=parentId)
+            item_name = item["name"]
+            parent_id = item.get("parentId")
+            parent = None
+
+            if parent_id != "null":
+                parent = ShopUnit.objects.filter(id=parent_id)
                 if not parent:
-                    return Response({'message' : 'Parent not exist'}, status=status.HTTP_400_BAD_REQUEST)
+                    return Response(
+                        {"message": "Parent does not exist"},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
                 if parent[0].type == ShopUnitType.OFFER:
-                    return Response({'message' : 'Parent must be a category'}, status=status.HTTP_400_BAD_REQUEST)
+                    return Response(
+                        {"message": "Parent must be a category"},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
 
-            # switch item type
-            # case offer
-            if item['type'] == ShopUnitType.OFFER:
-                type = ShopUnitType.OFFER
-            # case category
-            elif item['type'] == ShopUnitType.CATEGORY:
-                type = ShopUnitType.CATEGORY
-            # else == bad data
+            item_type = {
+                ShopUnitType.OFFER: ShopUnitType.OFFER,
+                ShopUnitType.CATEGORY: ShopUnitType.CATEGORY,
+            }.get(item["type"])
+
+            if item_type is None:
+                return Response(
+                    {"message": "No such type"}, status=status.HTTP_400_BAD_REQUEST
+                )
+
+            shop_unit = ShopUnit(id=item_id, name=item_name, date=date, type=item_type)
+            if item_type == ShopUnitType.OFFER:
+                shop_unit.price = item.get("price", 0)
             else:
-                 return Response({'message' : 'No such type'}, status=status.HTTP_400_BAD_REQUEST)
-            
-            shopUnit = ShopUnit(id=id,
-                                name=name,
-                                date=date,
-                                type=type)
-            if type == ShopUnitType.OFFER:
-                shopUnit.price = item['price'] or 0
-            else:
-                shopUnit.price = None
-            if parentId != 'null':
-                shopUnit.parentId = parentId
+                shop_unit.price = None
 
-            shopUnit.save()
+            if parent_id is not None:
+                shop_unit.parentId = parent_id
 
-            # update parent's children list and price
-            if parentId != 'null':
+            shop_unit.save()
+
+            if parent_id is not None:
                 parent = parent[0]
-                parent.children.add(shopUnit)
-                parent.save()
+                parent.children.add(shop_unit)
 
-            
-            # create record in statistics table
-            shopUnitStatisticUnit = ShopUnitStatisticUnit(id=id,
-                                                          statid=uuid.uuid4(),
-                                                          name=name, 
-                                                          parentId=shopUnit.parentId,
-                                                          type=type,
-                                                          date=date,
-                                                          price=shopUnit.price)
-            shopUnitStatisticUnit.save()
-        
+            statistic_unit = ShopUnitStatisticUnit(
+                statid=uuid.uuid4(),
+                name=item_name,
+                parentId=shop_unit.parentId,
+                type=item_type,
+                date=date,
+                price=shop_unit.price,
+            )
+            statistic_unit.save()
 
-        return Response(status=status.HTTP_201_CREATED) 
+        return Response(status=status.HTTP_201_CREATED)
 
 
 class ShopUnitStatisticsGetView(views.APIView):
-    # view showing statistics for a shop unit by id
+    """
+    A view that shows statistics for a shop unit by its id.
+    """
 
     def get(self, request, *args, **kwargs):
-        
-        pk = kwargs.get('pk')
-        
+        """
+        Retrieves a specific ShopUnitStatisticUnit object by its ID and returns the corresponding ShopUnitStatisticResponse object.
+
+        Args:
+            request (HttpRequest): The HTTP request object.
+            **kwargs: Arbitrary keyword arguments containing pk.
+
+        Returns:
+            Response: The serialized ShopUnitStatisticResponse object or an error response.
+
+        Raises:
+            ValidationError: If the ID is not a valid UUID.
+        """
+        pk = kwargs.get("pk")
+
         try:
             queryset = ShopUnitStatisticUnit.objects.filter(id=pk)
 
             if queryset:
                 # create statistic_response object
-                shopUnitStatisticResponse = ShopUnitStatisticResponse()
-                shopUnitStatisticResponse.save()
-                for stat in queryset.all():
-                    shopUnitStatisticResponse.items.add(stat)
+                response = ShopUnitStatisticResponse()
+                response.save()
+                response.items.add(queryset)
                 # return it
-                serializer = ShopUnitStatisticResponseSerializer([shopUnitStatisticResponse], many=True)
+                serializer = ShopUnitStatisticResponseSerializer(
+                    [response], many=True
+                )
                 return Response(serializer.data, status=status.HTTP_200_OK)
             # if statistic is not found
-            return Response({'message' : 'such item doesnt exist'}, status=status.HTTP_404_NOT_FOUND)
-        
+            return Response(
+                {"message": "Such item doesn't exist"}, status=status.HTTP_404_NOT_FOUND
+            )
+
         except ValidationError:
-            return Response({'message' : '{} is not a valid uuid'.format(pk)}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"message": "{} is not a valid UUID".format(pk)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
 
 class ShopUnitSalesView(views.APIView):
     # view showing statistics about units with sales during 24h from date in request
-    
-    def get(self, request, *args, **kwargs):
 
-        date = request.GET.get('date')
-        
+    def get(self, request, *args, **kwargs):
+        date = request.GET.get("date")
+
         date_end = parse_datetime(date)
 
         if date_end is None:
-            return Response({'message' : 'incorrect data format'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"message": "Incorrect data format"}, status=status.HTTP_400_BAD_REQUEST
+            )
 
         date_start = date_end - timedelta(hours=24)
-        queryset = ShopUnitStatisticUnit.objects.filter(date__range=[date_start, date_end], 
-                                                        type=ShopUnitType.OFFER)
+        queryset = ShopUnitStatisticUnit.objects.filter(
+            date__range=[date_start, date_end], type=ShopUnitType.OFFER
+        )
 
         # create statistic_response object
         shopUnitStatisticResponse = ShopUnitStatisticResponse(id=uuid.uuid4())
@@ -196,22 +283,30 @@ class ShopUnitSalesView(views.APIView):
         for stat in queryset.all():
             shopUnitStatisticResponse.items.add(stat)
         # return it
-        serializer = ShopUnitStatisticResponseSerializer([shopUnitStatisticResponse], many=True)
+        serializer = ShopUnitStatisticResponseSerializer(
+            [shopUnitStatisticResponse], many=True
+        )
         return Response(serializer.data, status=status.HTTP_200_OK)
+
 
 class ShopUnitDeleteView(generics.GenericAPIView):
     # view to delete a shop unit by id
 
     def delete(self, request, *args, **kwargs):
-        pk = kwargs.get('pk')
+        pk = kwargs.get("pk")
         try:
             queryset = ShopUnit.objects.filter(id=pk)
 
             if queryset:
-                ShopUnit.deleteRecursive(queryset[0])
-                return Response({'message' : 'deleted succesfully'}, status=status.HTTP_200_OK)
-            return Response({'message' : 'such item doesnt exist'}, status=status.HTTP_404_NOT_FOUND)
+                ShopUnit.delete_recursive(queryset[0])
+                return Response(
+                    {"message": "deleted succesfully"}, status=status.HTTP_200_OK
+                )
+            return Response(
+                {"message": "such item doesnt exist"}, status=status.HTTP_404_NOT_FOUND
+            )
         except ValidationError:
-            return Response({'message' : '{} is not a valid uuid'.format(pk)}, status=status.HTTP_400_BAD_REQUEST)
-
-
+            return Response(
+                {"message": "{} is not a valid uuid".format(pk)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
